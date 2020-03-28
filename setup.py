@@ -29,4 +29,9 @@ setuptools.setup(
     },
     platofrms="Linux",
     python_requires='>=3.5', # like JupyterHub
+    entry_points={
+        'jupyterhub.spawners': [
+            'podmanspawner = podmanspawner:PodmanSpawner',
+        ],
+  },
 )
