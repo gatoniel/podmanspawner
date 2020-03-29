@@ -26,8 +26,6 @@ from jupyterhub.utils import random_port
 
 import jupyterhub
 
-_jupyterhub_xy = "%i.%i" % (jupyterhub.version_info[:2])
-
 class PodmanSpawner(Spawner):
     """
     A Spawner that uses `subprocess.Popen` to start single-user servers as
@@ -51,7 +49,7 @@ class PodmanSpawner(Spawner):
         """,
     )
     image = Unicode(
-        "docker.io/jupyterhub/singleuser:%s" % _jupyterhub_xy,
+        "docker.io/jupyterhub/singleuser",
         config=True,
         help="""The image to use for single-user servers.
         This image should have the same version of jupyterhub as
@@ -62,17 +60,40 @@ class PodmanSpawner(Spawner):
         Any of the jupyter docker-stacks should work without additional config,
         as long as the version of jupyterhub in the image is compatible.
         """,
-    )
-    std_jupyter_port = Integer(
+    ).tag(config=True)
+    standard_jupyter_port = Integer(
         8888,
-        help="""The standard port the Jupyter Notebook is listening in the
-        container to"""
+        help="""The standard port, the Jupyter Notebook is listening in the
+        container to."""
         )
     https_proxy = Unicode(
-        "http://www-proxy1.hrz.uni-marburg.de:3128",
-        help="""The standard port the Jupyter Notebook is listening in the
-        container to"""
+        allow_none=True,
+        help="""Is your server running behind a proxy? Podman needs to now, to
+        pull images correctly."""
+        ).tag(config=True)
+
+    podman_additional_cmds = List(
+        default_value=[],
+        help="""These commands are appended to the podman_base_cmd. They are
+        then followed by the jupyter_base_cmd"""
+        ).tag(config=True)
+    jupyter_additional_cmds = List(
+        default_value=[],
+        help="""These commands are appended to the jupyter_base_cmd."""
+        ).tag(config=True)
+
+    enable_lab = Bool(
+        False,
+        help="""Enable Jupyter Lab in the container via environment variable.
+        Dont forget to change c.Spawner.default_url = '/lab'."""
         )
+
+    env_keep = List(
+        [],
+        help="""Override the env_keep of the Spawner calls, since we do not need
+        to keep these env variables in the container."""
+        )
+
 
     def make_preexec_fn(self, name):
         """
@@ -86,7 +107,7 @@ class PodmanSpawner(Spawner):
         Local processes only need the process id.
         """
         super(PodmanSpawner, self).load_state(state)
-        if 'pid' in state:
+        if 'cid' in state:
             self.cid = state['cid']
 
     def get_state(self):
@@ -94,7 +115,7 @@ class PodmanSpawner(Spawner):
         Local processes only need the process id.
         """
         state = super(PodmanSpawner, self).get_state()
-        if self.pid:
+        if self.cid:
             state['cid'] = self.cid
         return state
 
@@ -122,7 +143,11 @@ class PodmanSpawner(Spawner):
         """Get the complete set of environment variables to be set in the spawned process."""
         env = super().get_env()
         env = self.user_env(env)
-        env['https_proxy'] = self.https_proxy
+        if self.https_proxy:
+            env['https_proxy'] = self.https_proxy
+        if self.enable_lab:
+            env['JUPYTER_ENABLE_LAB'] = "yes"
+        env["JUPYTER_IMAGE_SPEC"] = self.image
         return env
 
     async def move_certs(self, paths):
@@ -135,6 +160,7 @@ class PodmanSpawner(Spawner):
         Stage certificates into a private home directory
         and make them readable by the user.
         """
+        raise NotImplementedError
         import pwd
 
         key = paths['keyfile']
@@ -174,28 +200,33 @@ class PodmanSpawner(Spawner):
         uid = user.pw_uid
         gid = user.pw_gid
         hosthome = user.pw_dir
-        conthome = "/home/{}".format(self.user.name)
+        conthome = "/home/jovyan/home"#{}".format(self.user.name)
 
         self.port = random_port()
 
-        cmd = [
-                "podman", "run", "-d", "--rm",
+        podman_base_cmd = [
+                "podman", "run", "-d", "--env-host",
+                # "--rm",
                 "-u", "{}:{}".format(uid, gid),
-                "-p", "{hostport}:{port}".format(
-                        hostport=self.port, port=self.standard_jupyter_port
-                        ),
-                "--env", "JUPYTER_IMAGE_SPEC={}".format(self.image),
-                "-v", "{}:{}".format(hosthome, conthome),
-                "-v", "/ext_data:/mnt/datahdd",
-                "-w", conthome,
-                self.image
+                # "-p", "{hostport}:{port}".format(
+                #         hostport=self.port, port=self.standard_jupyter_port
+                #         ),
+                "--net", "host",
+                "-v", "{}:/home/jovyan/home"#".format(hosthome, conthome),
                 ]
 
-        cmd = shlex.split(" ".join(cmd))
+        jupyter_base_cmd = [
+                self.image, "start-notebook.sh",
+                "--NotebookApp.port={}".format(self.port)
+                ]
+        podman_cmd = podman_base_cmd+self.podman_additional_cmds
+        jupyter_cmd = jupyter_base_cmd+self.jupyter_additional_cmds
+
+        cmd = shlex.split(" ".join(podman_cmd+jupyter_cmd))
 
         env = self.get_env()
 
-        self.log.info("Spawning %s", ' '.join(pipes.quote(s) for s in cmd))
+        self.log.info("Spawning via Podman command: %s", ' '.join(s for s in cmd))
 
         popen_kwargs = dict(
             preexec_fn=self.make_preexec_fn(self.user.name),
@@ -215,7 +246,7 @@ class PodmanSpawner(Spawner):
                 self.log.error(
                         "PodmanSpawner.start error: {}".format(err)
                         )
-                raise
+                raise RuntimeError(err)
         except PermissionError:
             # use which to get abspath
             script = shutil.which(cmd[0]) or cmd[0]
@@ -243,16 +274,19 @@ class PodmanSpawner(Spawner):
             self.log.error(
                     "PodmanSpawner.poll error: {}".format(err)
                     )
-            raise
+            raise RuntimeError(err)
 
     def podman(self, command):
         cmd = "podman container {command} {cid}".format(
                 command=command, cid=self.cid
                 )
+        env = self.get_env()
         popen_kwargs = dict(
                 preexec_fn=self.make_preexec_fn(self.user.name),
                 stdout=PIPE, stderr=PIPE,
+                start_new_session=True,  # don't forward signals
                 )
+        popen_kwargs['env'] = env
         proc = Popen(shlex.split(cmd), **popen_kwargs)
         output, err = proc.communicate()
         return output, err, proc.returncode
@@ -266,9 +300,14 @@ class PodmanSpawner(Spawner):
         """
         output, err, returncode = self.podman("stop")
         if returncode == 0:
+            output, err, returncode = self.podman("rm")
+            if not returncode == 0:
+                self.log.warn(
+                        "PodmanSpawner.stop warn: {}".format(err)
+                        )
             return
         else:
             self.log.error(
                     "PodmanSpawner.stop error: {}".format(err)
                     )
-            raise
+            raise RuntimeError(err)

@@ -1,0 +1,3 @@
+jupyterhub
+json
+traitlets>=4.3.2
