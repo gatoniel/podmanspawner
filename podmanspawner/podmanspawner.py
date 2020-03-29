@@ -207,12 +207,12 @@ class PodmanSpawner(Spawner):
         podman_base_cmd = [
                 "podman", "run", "-d", "--env-host",
                 # "--rm",
-                "-u", "{}:{}".format(uid, gid),
+                # "-u", "{}:{}".format(uid, gid),
                 # "-p", "{hostport}:{port}".format(
                 #         hostport=self.port, port=self.standard_jupyter_port
                 #         ),
                 "--net", "host",
-                "-v", "{}:/home/jovyan/home"#".format(hosthome, conthome),
+                "-v", "{}:/home/jovyan/home".format(hosthome),# conthome),
                 ]
 
         jupyter_base_cmd = [
