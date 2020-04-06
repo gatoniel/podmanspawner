@@ -93,14 +93,24 @@ class PodmanSpawner(Spawner):
         help="""Override the env_keep of the Spawner calls, since we do not need
         to keep these env variables in the container."""
         )
-
+    # here we would need traitlets callable type...
+    preexec_fn_set = Integer(
+        0,
+        help="""
+        Set this to 1, when there is a different preexec_fn""",
+    )
 
     def make_preexec_fn(self, name):
         """
         Return a function that can be used to set the user id of the spawned process to user with name `name`
+
         This function can be safely passed to `preexec_fn` of `Popen`
         """
         return set_user_setuid(name)
+
+    def set_preexec_fn(self, fn):
+        self.preexec_fn = fn
+        self.preexec_fn_set = 1
 
     def load_state(self, state):
         """Restore state about spawned single-user server after a hub restart.
@@ -129,22 +139,32 @@ class PodmanSpawner(Spawner):
         import pwd
 
         env['USER'] = self.user.name
-        home = pwd.getpwnam(self.user.name).pw_dir
-        shell = pwd.getpwnam(self.user.name).pw_shell
+        pw = pwd.getpwnam(self.user.name)
+        home = pw.pw_dir
+        shell = pw.pw_shell
+        pw_uid = pw.pw_uid
         # These will be empty if undefined,
         # in which case don't set the env:
         if home:
             env['HOME'] = home
+            env['PWD'] = home
         if shell:
             env['SHELL'] = shell
+        # Podman saves its tmp files in XDG_RUNTIME_DIR...
+        env['XDG_RUNTIME_DIR'] = "/run/user/{}".format(pw_uid)
+        # Otherwise podman won´t work correctly...
+        env['PATH'] = "{home}/.local/bin:{home}/bin:/usr/local/cuda-10.2/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin".format(home=home)
+
+        if self.https_proxy:
+            env['https_proxy'] = self.https_proxy
         return env
 
     def get_env(self):
         """Get the complete set of environment variables to be set in the spawned process."""
         env = super().get_env()
-        env = self.user_env(env)
-        if self.https_proxy:
-            env['https_proxy'] = self.https_proxy
+        # We do not need user defined stuff in the container. So we do not need
+        # this next line...
+        # env = self.user_env(env)
         if self.enable_lab:
             env['JUPYTER_ENABLE_LAB'] = "yes"
         env["JUPYTER_IMAGE_SPEC"] = self.image
@@ -205,7 +225,9 @@ class PodmanSpawner(Spawner):
         self.port = random_port()
 
         podman_base_cmd = [
-                "podman", "run", "-d", "--env-host",
+                "podman", "run", "-d",
+                 # https://www.redhat.com/sysadmin/rootless-podman
+                #"--storage-opt", "ignore_chown_errors",
                 # "--rm",
                 # "-u", "{}:{}".format(uid, gid),
                 # "-p", "{hostport}:{port}".format(
@@ -214,6 +236,13 @@ class PodmanSpawner(Spawner):
                 "--net", "host",
                 "-v", "{}:/home/jovyan/home".format(hosthome),# conthome),
                 ]
+        # append flags for the JUPYTER*** environment in the container
+        jupyter_env = self.get_env()
+        podman_base_cmd_jupyter_env = []
+        for k, v in jupyter_env.items():
+            podman_base_cmd_jupyter_env.append("--env")
+            podman_base_cmd_jupyter_env.append("{k}={v}".format(k=k,v=v))
+        podman_base_cmd += podman_base_cmd_jupyter_env
 
         jupyter_base_cmd = [
                 self.image, "start-notebook.sh",
@@ -224,38 +253,34 @@ class PodmanSpawner(Spawner):
 
         cmd = shlex.split(" ".join(podman_cmd+jupyter_cmd))
 
-        env = self.get_env()
+        env = self.user_env()
 
         self.log.info("Spawning via Podman command: %s", ' '.join(s for s in cmd))
 
+        # test whether a preexec_fn was set externally or not
+        if self.preexec_fn_set == 0:
+            preexec_fn = self.make_preexec_fn(self.user.name)
+        else:
+            preexec_fn = self.preexec_fn
         popen_kwargs = dict(
-            preexec_fn=self.make_preexec_fn(self.user.name),
+            preexec_fn=preexec_fn,
             stdout=PIPE, stderr=PIPE,
             start_new_session=True,  # don't forward signals
         )
         popen_kwargs.update(self.popen_kwargs)
         # don't let user config override env
         popen_kwargs['env'] = env
-        try:
-            # https://stackoverflow.com/questions/2502833/store-output-of-subprocess-popen-call-in-a-string
-            proc = Popen(cmd, **popen_kwargs)
-            output, err = proc.communicate()
-            if proc.returncode == 0:
-                self.cid = output[:-2]
-            else:
-                self.log.error(
-                        "PodmanSpawner.start error: {}".format(err)
-                        )
-                raise RuntimeError(err)
-        except PermissionError:
-            # use which to get abspath
-            script = shutil.which(cmd[0]) or cmd[0]
+
+        # https://stackoverflow.com/questions/2502833/store-output-of-subprocess-popen-call-in-a-string
+        proc = Popen(cmd, **popen_kwargs)
+        output, err = proc.communicate()
+        if proc.returncode == 0:
+            self.cid = output[:-2]
+        else:
             self.log.error(
-                "Permission denied trying to run %r. Does %s have access to this file?",
-                script,
-                self.user.name,
-            )
-            raise
+                    "PodmanSpawner.start error: {}".format(err)
+                    )
+            raise RuntimeError(err)
         return ('127.0.0.1', self.port)
 
     async def poll(self):
@@ -280,13 +305,13 @@ class PodmanSpawner(Spawner):
         cmd = "podman container {command} {cid}".format(
                 command=command, cid=self.cid
                 )
-        env = self.get_env()
         popen_kwargs = dict(
+                # we will just switch uid/gid but not start a new PAM session
                 preexec_fn=self.make_preexec_fn(self.user.name),
                 stdout=PIPE, stderr=PIPE,
                 start_new_session=True,  # don't forward signals
+                env=self.user_env()
                 )
-        popen_kwargs['env'] = env
         proc = Popen(shlex.split(cmd), **popen_kwargs)
         output, err = proc.communicate()
         return output, err, proc.returncode
