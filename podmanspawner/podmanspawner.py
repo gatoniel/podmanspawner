@@ -253,7 +253,7 @@ class PodmanSpawner(Spawner):
 
         cmd = shlex.split(" ".join(podman_cmd+jupyter_cmd))
 
-        env = self.user_env()
+        env = self.user_env({})
 
         self.log.info("Spawning via Podman command: %s", ' '.join(s for s in cmd))
 
@@ -310,7 +310,7 @@ class PodmanSpawner(Spawner):
                 preexec_fn=self.make_preexec_fn(self.user.name),
                 stdout=PIPE, stderr=PIPE,
                 start_new_session=True,  # don't forward signals
-                env=self.user_env()
+                env=self.user_env({})
                 )
         proc = Popen(shlex.split(cmd), **popen_kwargs)
         output, err = proc.communicate()

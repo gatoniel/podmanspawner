@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="podmanspawner", # Replace with your own username
-    version="0.1.1-dev",
+    version="0.2",
     author="Niklas Netter",
     author_email="niknett@gmail.com",
     description="PodmanSpawner for JupyterHub",

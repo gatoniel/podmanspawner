@@ -7,8 +7,9 @@ Spawner to use podman with JupyterHub
 See also this [issue](https://github.com/jupyterhub/dockerspawner/issues/360) on
 dockerspawner.
 
-**This Spawner is in development and is not working properly.** This is a
-minimal working example.
+**This Spawner is still in development and might not work properly.** Please
+feel free to file issues, when you encounter problems. Version 0.2 seems to work
+in my case...
 
 ### Technical
 
@@ -19,6 +20,27 @@ Right now we use subprocess.Popen to make the calls to Podman. We should use [po
 Via pip:
 
     pip install git+https://github.com/gatoniel/podmanspawner
+
+### Recommendations
+
+Podman itself relies on a correct user environment, especially `$XDG_RUNTIME_DIR`
+and `$PATH`. It also relies on the existence of the directory /run/user/UID. It
+has read and write permissions only for the current user. You can leverage PAM
+with pam_open_session to create this directory with the correct permissions for
+the user. This is recommended, when your users cannot login to the machine
+separately, e.g. via ssh. PAMs pam_open_session does not work properly in
+JupyterHub (see [#2973](https://github.com/jupyterhub/jupyterhub/issues/2973)).
+You can find an improved version of JupyterHub
+[here](https://github.com/gatoniel/jupyterhub). When using WrapSpawner, you need
+to use an [improved version](https://github.com/gatoniel/wrapspawner/), too.
+On strict SELinux machines, you might encounter SELinux problems. When using the
+PAM stack to open user sessions. I wrote a
+[SELinux policy](https://github.com/gatoniel/jupyterhubd_SELinux) that should
+work with the above mentioned repos.
+
+Using pam_open_session also adds more security to your JupyterHub, since the
+loginuid of the singleuser notebooks is changed to the users ID, making auditing
+mor reliable.
 
 ## Configuration
 
@@ -46,12 +68,18 @@ c.ProfilesSpawner.profiles = [
 
 ## Known issues
 
-You should run this with a user that has a low UID on the host system. UID=1000 and UID=1001
-worked out for me on CentOS 8. See this [issue](https://github.com/gatoniel/podmanspawner/issues/2).
+Most of Jupyters containers change the user to jovyan. Due to the user namespace
+mapping of Podman this user has no access rights on the host system. This means
+that users cannot access their mounted homefolders properly. I see two solutions
+to overcome this situation:
+1. Change the jupyter images, so that they use the root user of the container.
+   The root user in the container is mapped to the actual running user on the
+   host by podman.
+2. Grant permissions on the host for the jovyan user of each user. This adds a
+   separate routine that has to be called for every user...
 
 ## ToDos:
 
 * How to use the [podman RestAPI](https://github.com/containers/podman-py). See this [issue](https://github.com/containers/python-podman/issues/16#issuecomment-605439792)?
-* Solve the UID issues. Can we mount /home/USER:/home/USER and bypass the /home/jovyan in the image?
-* Implement correct rights to use the mounted folders, see this [issue](https://github.com/gatoniel/podmanspawner/issues/1).
-* Implement correct move_certs routine.
+* Implement correct move_certs routine. This could be solved when users access
+  the notebook as root.
