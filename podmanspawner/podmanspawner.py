@@ -111,6 +111,7 @@ class PodmanSpawner(Spawner):
         help="""Where to map the users home directory. Use USERNAME to refer
         to the users name in the filepath"""
         )
+    startatconthome = Bool(False, help="""add -w conthome to podman cmd""")
 
     def make_preexec_fn(self, name):
         """
@@ -248,6 +249,8 @@ class PodmanSpawner(Spawner):
                 "--net", "host",
                 "-v", "{}:{}".format(hosthome, conthome),
                 ]
+        if self.startatconthome:
+            podman_base_cmd += ["-w", conthome]
         # append flags for the JUPYTER*** environment in the container
         jupyter_env = self.get_env()
         podman_base_cmd_jupyter_env = []
