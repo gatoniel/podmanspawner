@@ -3,6 +3,8 @@
 
 # copied from the jupyterhub.spawner.LocalProcessSpawner
 
+import os
+import shutil
 import json
 import shlex
 from subprocess import Popen, PIPE
@@ -61,6 +63,11 @@ class PodmanSpawner(Spawner):
         as long as the version of jupyterhub in the image is compatible.
         """,
     ).tag(config=True)
+    start_cmd = Unicode(
+        "start-notebook.sh",
+        help="""This command is run in the container. Should be 'start-notebook.sh'
+        or 'jupyter notebook'"""
+        )
     standard_jupyter_port = Integer(
         8888,
         help="""The standard port, the Jupyter Notebook is listening in the
@@ -99,6 +106,11 @@ class PodmanSpawner(Spawner):
         help="""
         Set this to 1, when there is a different preexec_fn""",
     )
+    conthome = Unicode(
+        "/home/jovyan/home",
+        help="""Where to map the users home directory. Use USERNAME to refer
+        to the users name in the filepath"""
+        )
 
     def make_preexec_fn(self, name):
         """
@@ -217,10 +229,10 @@ class PodmanSpawner(Spawner):
         """Start the single-user server."""
         import pwd
         user = pwd.getpwnam(self.user.name)
-        uid = user.pw_uid
-        gid = user.pw_gid
+#        uid = user.pw_uid
+#        gid = user.pw_gid
         hosthome = user.pw_dir
-        conthome = "/home/jovyan/home"#{}".format(self.user.name)
+        conthome = self.conthome.replace("USERNAME", self.user.name)
 
         self.port = random_port()
 
@@ -234,7 +246,7 @@ class PodmanSpawner(Spawner):
                 #         hostport=self.port, port=self.standard_jupyter_port
                 #         ),
                 "--net", "host",
-                "-v", "{}:/home/jovyan/home".format(hosthome),# conthome),
+                "-v", "{}:{}".format(hosthome, conthome),
                 ]
         # append flags for the JUPYTER*** environment in the container
         jupyter_env = self.get_env()
@@ -245,7 +257,7 @@ class PodmanSpawner(Spawner):
         podman_base_cmd += podman_base_cmd_jupyter_env
 
         jupyter_base_cmd = [
-                self.image, "start-notebook.sh",
+                self.image, self.start_cmd,
                 "--NotebookApp.port={}".format(self.port)
                 ]
         podman_cmd = podman_base_cmd+self.podman_additional_cmds
