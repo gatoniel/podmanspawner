@@ -51,20 +51,29 @@ this in your jupyterhub_config.py. We relax the `c.Spawner.start_timeout` to giv
 c.Spawner.start_timeout = 120
 c.JupyterHub.spawner_class = 'wrapspawner.ProfilesSpawner'
 c.ProfilesSpawner.profiles = [
-    ('Host process / basic python', 'local', 'jupyterhub.spawner.LocalProcessSpawner', {}),
-    ('Podman Python 3', 'podman-std', 'podmanspawner.PodmanSpawner', dict(
-            # mount an additional volume
-            podman_additional_cmds=["-v", "/mnt/datahdd:/home/jovyan/datahdd"],
-            # you might need to add a proxy, so Podman is able to use it
-            # when pulling the image
-            https_proxy="<some-proxy>",
-            # check whether JupyterLab should be started
-            enable_lab=True,
-            # add commands to alter the behaviour of Jupyter
-            jupyter_additional_cmds=[],
-            )),
-    ]
+        ('Host process / basic python', 'local', 'jupyterhub.spawner.LocalProcessSpawner', {}),
+        ('Podman Python 3', 'podman-std', 'podmanspawner.PodmanSpawner', dict(
+                podman_additional_cmds=["-v", "/mnt/datahdd:/home/jovyan/datahdd"],
+                https_proxy="http://www-proxy1.hrz.uni-marburg.de:3128",
+                enable_lab=True,
+                )),
+        ('Podman Stardist', 'podman-stardist', 'podmanspawner.PodmanSpawner', dict(
+                podman_additional_cmds=[
+                        "-v", "/mnt/datahdd:/extdata",
+                        "--hooks-dir", "/usr/share/containers/oci/hooks.d/",
+                        "-e", "NVIDIA_VISIBLE_DEVICES=all"
+                        ],
+                jupyter_additional_cmds=["--allow-root"],
+                enable_lab=True,
+                image="dir:/mnt/datahdd/share/podman_images/stardist",
+                start_cmd="jupyter notebook",
+                conthome="/home/USERNAME/",
+                startatconthome=True,
+                )),
+        ]
 ```
+
+I might be userful to use the `podman push` command to [push](https://github.com/containers/libpod/blob/master/docs/source/markdown/podman-push.1.md) the images you use to a local directory. This might speed up start time of the spawner, since the image must not be downloaded, also you dont need to push specially created images to an online repo...
 
 ## Known issues
 
