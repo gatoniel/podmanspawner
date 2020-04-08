@@ -66,7 +66,7 @@ c.ProfilesSpawner.profiles = [
                 jupyter_additional_cmds=["--allow-root"],
                 enable_lab=True,
                 image="dir:/mnt/datahdd/share/podman_images/stardist",
-                start_cmd="jupyter notebook",
+                start_cmd="jupyterhub-singleuser",
                 conthome="/home/USERNAME/",
                 startatconthome=True,
                 )),

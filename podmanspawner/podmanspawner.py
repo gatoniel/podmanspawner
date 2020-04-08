@@ -66,7 +66,7 @@ class PodmanSpawner(Spawner):
     start_cmd = Unicode(
         "start-notebook.sh",
         help="""This command is run in the container. Should be 'start-notebook.sh'
-        or 'jupyter notebook'"""
+        or 'jupyterhub-singleuser'"""
         )
     standard_jupyter_port = Integer(
         8888,
