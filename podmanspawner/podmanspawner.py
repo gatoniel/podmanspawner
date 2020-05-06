@@ -262,8 +262,8 @@ class PodmanSpawner(Spawner):
 		start_cmd = self.start_cmd
 		port_already_set = False
 		if "PORT" in self.start_cmd:
-			start_cmd = self.start_cmd.replace("PORT", str(self.port))
-			port_already_set = True
+		    start_cmd = self.start_cmd.replace("PORT", str(self.port))
+		    port_already_set = True
         jupyter_base_cmd = [self.image, start_cmd]
 		
 		if not port_already_set:,
