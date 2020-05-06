@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="podmanspawner", # Replace with your own username
-    version="0.2.2",
+    version="0.2.3",
     author="Niklas Netter",
     author_email="niknett@gmail.com",
     description="PodmanSpawner for JupyterHub",
@@ -27,7 +27,7 @@ setuptools.setup(
         'Source': 'https://github.com/gatoniel/podmanspawner',
         'Tracker': 'https://github.com/gatoniel/podmanspawner/issues',
     },
-    platofrms="Linux",
+    platforms="Linux",
     python_requires='>=3.5', # like JupyterHub
     entry_points={
         'jupyterhub.spawners': [

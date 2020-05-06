@@ -66,7 +66,7 @@ class PodmanSpawner(Spawner):
     start_cmd = Unicode(
         "start-notebook.sh",
         help="""This command is run in the container. Should be 'start-notebook.sh'
-        or 'jupyterhub-singleuser'"""
+        or 'jupyterhub-singleuser'. PORT gets replaced by the port number the notebook should run on."""
         )
     standard_jupyter_port = Integer(
         8888,
@@ -258,11 +258,17 @@ class PodmanSpawner(Spawner):
             podman_base_cmd_jupyter_env.append("--env")
             podman_base_cmd_jupyter_env.append("{k}={v}".format(k=k,v=v))
         podman_base_cmd += podman_base_cmd_jupyter_env
-
-        jupyter_base_cmd = [
-                self.image, self.start_cmd,
-                "--NotebookApp.port={}".format(self.port)
-                ]
+		
+		start_cmd = self.start_cmd
+		port_already_set = False
+		if "PORT" in self.start_cmd:
+			start_cmd = self.start_cmd.replace("PORT", str(self.port))
+			port_already_set = True
+        jupyter_base_cmd = [self.image, start_cmd]
+		
+		if not port_already_set:,
+            jupyter_base_cmd.append("--NotebookApp.port={}".format(self.port))
+        
         podman_cmd = podman_base_cmd+self.podman_additional_cmds
         jupyter_cmd = jupyter_base_cmd+self.jupyter_additional_cmds
 
