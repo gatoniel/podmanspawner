@@ -266,7 +266,7 @@ class PodmanSpawner(Spawner):
             port_already_set = True
         jupyter_base_cmd = [self.image, start_cmd]
         
-        if not port_already_set:,
+        if not port_already_set:
             jupyter_base_cmd.append("--NotebookApp.port={}".format(self.port))
         
         podman_cmd = podman_base_cmd+self.podman_additional_cmds
