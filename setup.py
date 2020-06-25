@@ -4,8 +4,8 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    name="podmanspawner", # Replace with your own username
-    version="0.2.6",
+    name="podmanspawner",  # Replace with your own username
+    version="0.2.7-dev",
     author="Niklas Netter",
     author_email="niknett@gmail.com",
     description="PodmanSpawner for JupyterHub",
@@ -28,10 +28,10 @@ setuptools.setup(
         'Tracker': 'https://github.com/gatoniel/podmanspawner/issues',
     },
     platforms="Linux",
-    python_requires='>=3.5', # like JupyterHub
+    python_requires='>=3.5',  # like JupyterHub
     entry_points={
         'jupyterhub.spawners': [
             'podmanspawner = podmanspawner:PodmanSpawner',
         ],
-  },
+    },
 )

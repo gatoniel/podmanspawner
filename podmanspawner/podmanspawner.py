@@ -63,6 +63,16 @@ class PodmanSpawner(Spawner):
         as long as the version of jupyterhub in the image is compatible.
         """,
     ).tag(config=True)
+    pull_image_first = Bool(
+        False,
+        help="""Run podman pull image, before podman run to circumvent current
+        transport problem."""
+    )
+    pull_image = Unicode(
+        allow_none=True,
+        help="""When image should be pulled first, where to pull from?"""
+    )
+
     start_cmd = Unicode(
         "start-notebook.sh",
         help="""This command is run in the container. Should be 'start-notebook.sh'
@@ -258,17 +268,17 @@ class PodmanSpawner(Spawner):
             podman_base_cmd_jupyter_env.append("--env")
             podman_base_cmd_jupyter_env.append("{k}={v}".format(k=k,v=v))
         podman_base_cmd += podman_base_cmd_jupyter_env
-		
+
         start_cmd = self.start_cmd
         port_already_set = False
         if "PORT" in self.start_cmd:
             start_cmd = self.start_cmd.replace("PORT", str(self.port))
             port_already_set = True
         jupyter_base_cmd = [self.image, start_cmd]
-        
+
         if not port_already_set:
             jupyter_base_cmd.append("--NotebookApp.port={}".format(self.port))
-        
+
         podman_cmd = podman_base_cmd+self.podman_additional_cmds
         jupyter_cmd = jupyter_base_cmd+self.jupyter_additional_cmds
 
@@ -293,6 +303,19 @@ class PodmanSpawner(Spawner):
         popen_kwargs['env'] = env
 
         # https://stackoverflow.com/questions/2502833/store-output-of-subprocess-popen-call-in-a-string
+
+        if self.pull_image_first:
+            pull_cmd = ["podman", "pull", self.pull_image]
+            pull_proc = Popen(pull_cmd, **popen_kwargs)
+            output, err = pull_proc.communicate()
+            if pull_proc.returncode == 0:
+                pass
+            else:
+                self.log.error(
+                    "PodmanSpawner.start pull error: {}".format(err)
+                )
+                raise RuntimeError(err)
+
         proc = Popen(cmd, **popen_kwargs)
         output, err = proc.communicate()
         if proc.returncode == 0:
